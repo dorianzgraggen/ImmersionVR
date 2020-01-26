@@ -66,6 +66,39 @@ private:
 		class USceneComponent* UIHelperBase;
 
 	UPROPERTY(VisibleAnywhere)
+		class USceneComponent* SpectatorHelper;
+
+	UPROPERTY(VisibleAnywhere)
+		class USceneComponent* SpectatorCamHolder;
+
+	UPROPERTY(VisibleAnywhere)
+		class USceneCaptureComponent2D* SpectatorCam;
+
+	UPROPERTY(VisibleAnywhere)
+		class USphereComponent* PlayerHead;
+
+	float SmoothlyCalculatePositionAlongWay(float Progress);
+
+	bool bPlayerHasRecentlyTeleported = true;
+	bool bSpectatorCamMustMove = false;
+	bool bSpectatorCamMustAdjustRotation = false;
+	bool bLiftIsDominant = false;
+	bool bFlyToLiftSpec;
+
+	UPROPERTY(VisibleAnywhere)
+	class ALift* Lift;
+
+	FVector OldSpecCamLocation = FVector(0);
+	FRotator OldSpecCamRotation = FRotator(0);
+
+	FVector TravelVector = FVector(0);
+	FRotator TravelRotator = FRotator(0);
+	float ProgressOnTravel = 0;
+
+	FVector GetLiftSpecCamLocation();
+	FRotator GetLiftSpecCamRotation();
+
+	UPROPERTY(VisibleAnywhere)
 		class USceneComponent* HandDirection;
 
 	UPROPERTY(VisibleAnywhere)

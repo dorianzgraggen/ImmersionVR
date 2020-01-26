@@ -8,6 +8,7 @@
 #include "Components/InputComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SceneComponent.h"
+#include "Components/ArrowComponent.h"
 #include "Classes/Camera/PlayerCameraManager.h"
 #include "TimerManager.h"
 #include "Components/CapsuleComponent.h"
@@ -40,6 +41,10 @@
 #include "UObject/NameTypes.h"
 #include "Sound/SoundCue.h"
 #include "Sound/SoundBase.h"
+#include "Components/SceneCaptureComponent2D.h"
+#include "Components/SphereComponent.h"
+#include "Lift.h"
+#include "Components/PointLightComponent.h" 
 
 // Sets default values
 APlayerCharacter::APlayerCharacter()
@@ -124,6 +129,18 @@ APlayerCharacter::APlayerCharacter()
 	UIHelperBase = CreateDefaultSubobject<USceneComponent>(TEXT("UIHelperBase"));
 	UIHelperBase->SetupAttachment(CameraHolder);
 
+	SpectatorHelper = CreateDefaultSubobject<USceneComponent>(TEXT("SpectatorHelper"));
+	SpectatorHelper->SetupAttachment(CameraHolder);
+
+	SpectatorCamHolder = CreateDefaultSubobject<USceneComponent>(TEXT("SpectatorCamHolder"));
+	SpectatorCamHolder->SetupAttachment(SpectatorHelper);
+
+	SpectatorCam = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("SpectatorCam"));
+	SpectatorCam->SetupAttachment(SpectatorCamHolder);
+
+
+	PlayerHead = CreateDefaultSubobject<USphereComponent>(TEXT("PlayerHead"));
+	PlayerHead->SetupAttachment(Camera);
 
 	UIHelper = CreateDefaultSubobject<USceneComponent>(TEXT("UIHelper"));
 	UIHelper->SetupAttachment(UIHelperBase);
@@ -157,8 +174,18 @@ void APlayerCharacter::BeginPlay()
 	Highlighter->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
 	ControllerDefaultMaterial = ControllerRight->GetMaterial(2);
 
+	SpectatorCam->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+	SpectatorCamHolder->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+	SpectatorHelper->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
 
 	UE_LOG(LogTemp, Warning, TEXT("Moving"));
+
+
+	for (TActorIterator<ALift> ActorItr(GetWorld()); ActorItr; ++ActorItr)
+	{
+		// Same as with the Object Iterator, access the subclass instance with the * or -> operators.
+		Lift = *ActorItr;
+	}
 }
 
 // Called every frame
@@ -170,6 +197,148 @@ void APlayerCharacter::Tick(float DeltaTime)
 	
 
 	UE_LOG(LogTemp, Warning, TEXT("Delta Seconds: %f, FPS: %f"), GetWorld()->GetDeltaSeconds(), 1/GetWorld()->GetDeltaSeconds());
+
+
+	
+
+
+	if (Lift->bPlayerIsInside)
+	{
+		bLiftIsDominant = true;
+		if (Lift->bAwaitLeaving)
+		{
+			SpectatorCamHolder->SetWorldLocation(SpectatorCam->GetComponentLocation());
+			SpectatorCamHolder->SetWorldRotation(SpectatorCam->GetComponentRotation());
+			bLiftIsDominant = false;
+		}
+	}
+	else {
+		bLiftIsDominant = false;
+	}
+
+	if (bPlayerHasRecentlyTeleported && !bLiftIsDominant)
+	{
+		SpectatorHelper->SetWorldLocation(Camera->GetComponentLocation());
+		SpectatorHelper->AddWorldOffset(FVector(0, 0, 35));
+
+		bool bRotationInvalid = true;
+		float CurrentRotOffset = 0;
+		float FinalRotOffset = 0;
+
+		OldSpecCamLocation = SpectatorCamHolder->GetComponentLocation();
+		OldSpecCamRotation = SpectatorCamHolder->GetComponentRotation();
+		OldSpecCamRotation.Pitch = -18;
+		OldSpecCamRotation.Roll = 0;
+
+		do
+		{
+			SpectatorHelper->SetWorldRotation(FRotator(0, Camera->GetComponentRotation().Yaw + CurrentRotOffset, 0));
+			SpectatorCamHolder->SetWorldRotation(SpectatorHelper->GetComponentRotation());
+			SpectatorCamHolder->SetWorldLocation(SpectatorHelper->GetComponentLocation() + SpectatorHelper->GetForwardVector() * -120);
+			bRotationInvalid = false;
+
+		} while (bRotationInvalid);
+		
+		TravelVector = SpectatorCamHolder->GetComponentLocation() - OldSpecCamLocation;
+		TravelRotator = SpectatorCamHolder->GetComponentRotation() - OldSpecCamRotation;
+		TravelRotator.Pitch = -18;
+		TravelRotator.Roll = 0;
+
+		ProgressOnTravel = 0;
+		bSpectatorCamMustMove = true;
+	
+		//SpectatorCam->SetWorldLocationAndRotation(SpectatorCamHolder->GetComponentLocation(), SpectatorCam->GetComponentRotation());
+
+		bPlayerHasRecentlyTeleported = false;
+	}
+
+	if (bSpectatorCamMustMove && !bLiftIsDominant)
+	{
+		ProgressOnTravel += GetWorld()->GetDeltaSeconds();
+
+		//FVector AddDistance = TravelVector * (-0.5 * UKismetMathLibrary::Cos(x) + 0.5);
+
+		float Multiplier = SmoothlyCalculatePositionAlongWay(ProgressOnTravel);
+		SpectatorCam->SetWorldLocation(OldSpecCamLocation + Multiplier * TravelVector);
+
+		TravelRotator = SpectatorCamHolder->GetComponentRotation() - OldSpecCamRotation;
+		TravelRotator.Pitch = 0;
+		TravelRotator.Roll = 0;
+		SpectatorCam->SetWorldRotation(OldSpecCamRotation + Multiplier * TravelRotator);
+		
+		//SpectatorCam->AddWorldOffset(TravelVector * (-0.5 * UKismetMathLibrary::Cos(UKismetMathLibrary::GetPI() * ProgressOnTravel) - 1));
+
+		//SpectatorCam->AddWorldOffset(TravelVector * GetWorld()->GetDeltaSeconds());
+
+		if (ProgressOnTravel > 1)
+		{
+			bSpectatorCamMustMove = false;
+		}
+	}
+	else if (bSpectatorCamMustAdjustRotation && !bLiftIsDominant)
+	{
+		ProgressOnTravel += GetWorld()->GetDeltaSeconds();
+		float Multiplier = SmoothlyCalculatePositionAlongWay(ProgressOnTravel);
+
+		SpectatorCam->SetWorldLocation(OldSpecCamLocation + Multiplier * TravelVector);
+
+		TravelRotator = SpectatorCamHolder->GetComponentRotation() - OldSpecCamRotation;
+		TravelRotator.Pitch = 0;
+		TravelRotator.Roll = 0;
+		SpectatorCam->SetWorldRotation(OldSpecCamRotation + Multiplier * TravelRotator);
+
+		if (ProgressOnTravel > 1)
+		{
+			bSpectatorCamMustAdjustRotation = false;
+		}
+
+	}
+	else if (!bPlayerHasRecentlyTeleported && !bLiftIsDominant)
+	{
+		if (SpectatorCam->GetComponentRotation().Yaw - Camera->GetComponentRotation().Yaw < -45 || SpectatorCam->GetComponentRotation().Yaw - Camera->GetComponentRotation().Yaw > 45)
+		{
+			OldSpecCamLocation = SpectatorCamHolder->GetComponentLocation();
+			OldSpecCamRotation = SpectatorCamHolder->GetComponentRotation();
+			OldSpecCamRotation.Pitch = -18;
+			OldSpecCamRotation.Roll = 0;
+			bool bRotationInvalid = true;
+
+			do
+			{
+				SpectatorHelper->SetWorldRotation(FRotator(0, Camera->GetComponentRotation().Yaw, 0));
+				SpectatorCamHolder->SetWorldRotation(SpectatorHelper->GetComponentRotation());
+				SpectatorCamHolder->SetWorldLocation(SpectatorHelper->GetComponentLocation() + SpectatorHelper->GetForwardVector() * -120);
+				bRotationInvalid = false;
+
+			} while (bRotationInvalid);
+
+			TravelVector = SpectatorCamHolder->GetComponentLocation() - OldSpecCamLocation;
+			TravelRotator = SpectatorCamHolder->GetComponentRotation() - OldSpecCamRotation;
+			TravelRotator.Pitch = -18;
+			TravelRotator.Roll = 0;
+
+			ProgressOnTravel = 0;
+			bSpectatorCamMustAdjustRotation = true;
+		}
+	}
+
+	if (Lift->bPlayerIsInside)
+	{
+		SpectatorCam->SetWorldLocation(GetLiftSpecCamLocation());
+		SpectatorCam->SetWorldRotation(GetLiftSpecCamRotation());
+		UE_LOG(LogTemp, Warning, TEXT("Spec_Location is %f %f %f"), GetLiftSpecCamLocation().X, GetLiftSpecCamLocation().Y, GetLiftSpecCamLocation().Z);
+
+		//UE_LOG(LogTemp, Warning, TEXT("HandRaisedCurrentTime: %f"), RightHandRaisedCurrentSeconds);
+
+		//UE_LOG(LogTemp, Warning, TEXT("Spec_Rotation is %s"), GetLiftSpecCamRotation().ToString());
+
+	}
+	
+	
+	
+
+	// End Spectator
+
 
 
 	HandleFingerPlacement();
@@ -592,6 +761,7 @@ void APlayerCharacter::Teleport()
 	else
 	{
 		SetActorLocation(TeleportDestination);
+		bPlayerHasRecentlyTeleported = true;
 		bCurrentlyTeleporting = false;
 
 		PC->PlayerCameraManager->StartCameraFade(1, 0, .5f, FLinearColor::Black);
@@ -624,6 +794,9 @@ void APlayerCharacter::FindObjectByPointing()
 	{
 		return;
 	}
+
+	UE_LOG(LogTemp, Warning, TEXT("This far: 1"));
+
 
 	FVector LineDirection;
 	FVector Startpoint = StrongHand->GetComponentLocation();
@@ -663,6 +836,8 @@ void APlayerCharacter::FindObjectByPointing()
 
 	if (bHit)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("This far: 2"));
+
 		PointingSphere->SetVisibility(true);
 		// Visualise the LineTrace for debugging
 		PointingSphere->SetWorldLocation(HitResult.ImpactPoint);
@@ -716,6 +891,8 @@ void APlayerCharacter::FindObjectByPointing()
 				ImpactPointExtent += 0.5;
 				PointingSphereScale += PointingSphereGrowPerSecond * GetWorld()->GetDeltaSeconds();
 				PointingSphere->SetWorldScale3D(FVector(PointingSphereScale));
+				UE_LOG(LogTemp, Warning, TEXT("This far: 3"));
+
 				//SetPointingSphereInnerRadius(ImpactPointExtent/100);
 			}
 			else if (bCurrentlyWantingToChangeMaterial)
@@ -740,6 +917,8 @@ void APlayerCharacter::FindObjectByPointing()
 
 			if (PointingSphere->GetComponentScale().X >= PointingSphereMaxSize)
 			{
+				
+				UE_LOG(LogTemp, Warning, TEXT("This far: 4"));
 				bGlissandoAllowed = false;
 				CurrentObjectMaterials = HitComponent->ListOfMaterials;
 				AffectedObject = SMComponent;
@@ -855,6 +1034,8 @@ void APlayerCharacter::ShowUserInterface()
 		UIStartOffset = -1 * MatsOnTopRow / 2 * UIMargin;
 	}
 
+	UE_LOG(LogTemp, Warning, TEXT("This far: 5"));
+
 	do
 	{
 		TryNumber++;
@@ -965,8 +1146,12 @@ void APlayerCharacter::ShowUserInterface()
 		}
 	} while (bSpawnLocationStatusKnown == false);
 
+	UE_LOG(LogTemp, Warning, TEXT("This far: 6"));
+
+
 	if (bMaterialsCanSpawn)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("This far: 8"));
 		// Rotation of the spawned clickable materials
 		SpawnRotation = FRotator(0, 0, 0);
 		SpawnRotation.Yaw = 0;
@@ -1005,6 +1190,8 @@ void APlayerCharacter::ShowUserInterface()
 			SpawnRotation += ClickableRotation;*/
 
 			SpawnClickableMaterial();
+			UE_LOG(LogTemp, Warning, TEXT("This far: 7"));
+
 		}
 
 
@@ -1588,4 +1775,24 @@ void APlayerCharacter::CorrectCollision()
 void APlayerCharacter::ChangeLanguage()
 {
 	bIsEnglish = !bIsEnglish;
+}
+
+float APlayerCharacter::SmoothlyCalculatePositionAlongWay(float Progress)
+{
+	float Position = -0.5 * UKismetMathLibrary::Cos(Progress * UKismetMathLibrary::GetPI()) + 0.5;
+	return Position;
+}
+
+FVector APlayerCharacter::GetLiftSpecCamLocation()
+{
+
+	UArrowComponent* SceneComponent = Lift->FindComponentByClass<UArrowComponent>();
+	return SceneComponent->GetComponentLocation();
+}
+
+
+FRotator APlayerCharacter::GetLiftSpecCamRotation()
+{
+	UArrowComponent* SceneComponent = Lift->FindComponentByClass<UArrowComponent>();
+	return SceneComponent->GetComponentRotation();
 }

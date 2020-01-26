@@ -48,6 +48,12 @@ void ALift::Tick(float DeltaTime)
 
 	//SetActorLocation(EndPosition);
 
+	UE_LOG(LogTemp, Warning, TEXT("bAwaitLeaving is %s"), (bAwaitLeaving ? TEXT("True") : TEXT("False")));
+	UE_LOG(LogTemp, Warning, TEXT("bLift: bPlayerWasOutside is %s"), (bPlayerWasOutside ? TEXT("True") : TEXT("False")));
+	UE_LOG(LogTemp, Warning, TEXT("bLift: bDoorsShouldClose is %s"), (bDoorsShouldClose ? TEXT("True") : TEXT("False")));
+	//UE_LOG(LogTemp, Warning, TEXT("bAwaitEntering is %s"), (bAwaitEntering ? TEXT("True") : TEXT("False")));
+
+
 	MoveLiftToPlayer();
 
 	// Going up
