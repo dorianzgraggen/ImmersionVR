@@ -23,7 +23,7 @@ Was added to the doors that should open when the tutorial is done. Handles openi
 Handles everything that has to do with the main part of the lift (i. e. the part of the lift that moves) and playing the lift sounds
 
 ### LiftDoor
-Handles opening the door that do not move
+Handles opening the lift doors that do not move
 
 ### DisableOnStart
 Used to destroy actos on begin play that are solely used for generating the NavMesh
