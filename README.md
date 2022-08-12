@@ -1,3 +1,5 @@
+:warning: **Read at your own risk, I do not approve of this code anymore.**
+
 # ImmersionVR
  The C++ code of Immersion VR
 
